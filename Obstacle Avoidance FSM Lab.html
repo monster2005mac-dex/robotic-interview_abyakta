@@ -1,0 +1,559 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Obstacle Avoidance FSM Lab</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one column. Simulator = arena canvas + controls on the left, live state / sensor / diagram / log on the right.
+   Code panel below mirrors the active state. Notes and links last. */
+:root{
+  --bg:#f2f5f8; --surface:#ffffff; --fg:#13202f; --muted:#5a6879; --line:#d3dbe5;
+  --fwd:#14764a; --rev:#a8510a; --turn:#2457d6; --ray:#d7263d;
+  --obs:#8d98a8; --arena:#fafcfe;
+  --font-display:"Bricolage Grotesque","Segoe UI",system-ui,sans-serif;
+  --font-body:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0e1520; --surface:#151e2c; --fg:#e6ebf2; --muted:#98a5b7; --line:#2a3649;
+    --fwd:#43c585; --rev:#f0a640; --turn:#7aa5ff; --ray:#ff6f7f;
+    --obs:#566379; --arena:#111925; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0e1520; --surface:#151e2c; --fg:#e6ebf2; --muted:#98a5b7; --line:#2a3649;
+  --fwd:#43c585; --rev:#f0a640; --turn:#7aa5ff; --ray:#ff6f7f;
+  --obs:#566379; --arena:#111925; color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--bg); color:var(--fg);
+  font:15px/1.55 var(--font-body);
+  padding-block:28px 56px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));
+  padding-right:max(16px,env(safe-area-inset-right,0px));
+}
+.wrap{max-width:1120px;margin:0 auto;display:flex;flex-direction:column;gap:44px}
+.eyebrow{font:500 12px/1 var(--font-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 12px}
+h1{font:700 clamp(1.9rem,4.4vw,2.9rem)/1.05 var(--font-display);letter-spacing:-.02em;margin:0 0 12px;text-wrap:balance}
+h2{font:700 1.4rem/1.2 var(--font-display);letter-spacing:-.01em;margin:0 0 14px;text-wrap:balance}
+h3{font:600 .8rem/1.2 var(--font-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 10px}
+.lead{max-width:62ch;margin:0;color:var(--muted);font-size:1.02rem}
+.lab{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:20px;align-items:start}
+@media (max-width:900px){.lab{grid-template-columns:minmax(0,1fr)}}
+.stage{background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+canvas{display:block;width:100%;height:auto;touch-action:none;cursor:crosshair}
+.controls{padding:16px;display:flex;flex-direction:column;gap:14px;border-top:1px solid var(--line)}
+.btnrow{display:flex;flex-wrap:wrap;gap:8px}
+.btn{font:500 .85rem var(--font-body);color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:7px 12px;cursor:pointer}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--fg);color:var(--bg);border-color:var(--fg);min-width:78px}
+.btn:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--turn);outline-offset:2px}
+.sliders{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px 20px}
+.ctl{display:grid;grid-template-columns:1fr auto;gap:4px 8px;min-width:0}
+.ctl label{font-weight:500;font-size:.85rem}
+.ctl output{font:500 .85rem var(--font-mono);color:var(--muted)}
+.ctl input{grid-column:1/-1;width:100%;margin:0;accent-color:var(--turn)}
+.toggles{display:flex;flex-wrap:wrap;gap:10px 22px;font-size:.88rem}
+.toggles label{display:flex;align-items:center;gap:7px}
+.toggles input{accent-color:var(--turn);margin:0}
+select{font:inherit;color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:5px;padding:3px 6px}
+.tctl{display:flex;align-items:center;gap:8px;margin-top:12px}
+.tctl label{font:500 .85rem var(--font-body);margin-right:auto}
+.tctl .btn{width:34px;padding:6px 0;font:600 1rem var(--font-mono);text-align:center}
+.tctl input[type=number]{width:70px;font:500 1rem var(--font-mono);color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:6px 8px;text-align:right}
+.hint{margin:0;color:var(--muted);font-size:.85rem;max-width:70ch}
+.side{--st:var(--fwd);background:var(--surface);border:1px solid var(--line);border-radius:10px;display:flex;flex-direction:column}
+.sec{padding:14px 16px;border-top:1px solid var(--line)}
+.sec:first-child{border-top:0}
+.chip{display:inline-flex;align-items:center;gap:10px;font:700 1.55rem/1 var(--font-display);letter-spacing:.01em;color:var(--st);background:color-mix(in srgb,var(--st) 13%,var(--surface));padding:9px 14px;border-radius:8px}
+.chip i{width:10px;height:10px;border-radius:50%;background:var(--st)}
+.bar{height:6px;background:var(--line);border-radius:3px;margin:12px 0 6px;overflow:hidden}
+.bar b{display:block;height:100%;width:0;background:var(--st)}
+.sub{font-size:.83rem;color:var(--muted);min-height:2.6em}
+.readout{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}
+.readout .num{font:500 2.3rem/1 var(--font-mono);font-variant-numeric:tabular-nums;min-width:2.2ch;text-align:right}
+.readout.near .num{color:var(--ray)}
+.readout .unit{font:500 .9rem var(--font-mono);color:var(--muted)}
+.readout .thr{margin-left:auto;font:500 .85rem var(--font-mono);color:var(--muted)}
+svg.diag{display:block;width:100%;height:auto}
+svg.diag text{font-family:var(--font-mono);fill:var(--fg)}
+.node rect{fill:var(--surface);stroke:var(--line);stroke-width:1.5}
+.node .nm{font-size:12px;font-weight:500}
+.node .ac{font-size:9.5px;fill:var(--muted)}
+.n-FORWARD{--c:var(--fwd)} .n-REVERSE{--c:var(--rev)} .n-TURN{--c:var(--turn)}
+.node.on rect{fill:color-mix(in srgb,var(--c) 17%,var(--surface));stroke:var(--c);stroke-width:2.5}
+.edge path{fill:none;stroke:var(--muted);stroke-width:1.5;marker-end:url(#ah)}
+.edge text{font-size:10px;fill:var(--muted)}
+.edge.flash path{stroke:var(--fg);stroke-width:3;marker-end:url(#ahf)}
+.edge.flash text{fill:var(--fg);font-weight:500}
+.log{list-style:none;margin:0;padding:0;font:400 .78rem/1.65 var(--font-mono);min-height:calc(6 * 1.65em);color:var(--muted)}
+.log li{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.log li:first-child{color:var(--fg)}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:0}
+.stats div{min-width:0}
+.stats dt{font:500 .68rem var(--font-mono);letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+.stats dd{margin:2px 0 0;font:500 1.15rem var(--font-mono);font-variant-numeric:tabular-nums}
+.codebox{--st:var(--fwd);background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow-x:auto;padding:12px 0}
+.codebox .ln{font:400 .84rem/1.6 var(--font-mono);white-space:pre;min-height:1.6em;padding:0 16px;color:var(--fg);width:max-content;min-width:100%}
+.codebox .ln.on{background:color-mix(in srgb,var(--st) 15%,transparent);box-shadow:inset 3px 0 0 var(--st)}
+.split{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:28px}
+@media (max-width:760px){.split{grid-template-columns:minmax(0,1fr)}}
+.tbl{width:100%;border-collapse:collapse;font-size:.9rem}
+.tbl th,.tbl td{text-align:left;padding:7px 10px 7px 0;border-top:1px solid var(--line);vertical-align:top}
+.tbl tr:first-child th,.tbl tr:first-child td{border-top:0}
+.tbl th{font-weight:600;white-space:nowrap;padding-right:16px}
+.list{margin:0;padding-left:1.1em;display:flex;flex-direction:column;gap:7px;font-size:.92rem}
+.list code,.tbl code,.hint code{font:500 .86em var(--font-mono);background:color-mix(in srgb,var(--muted) 16%,transparent);padding:1px 5px;border-radius:4px}
+.what{max-width:62ch;margin:18px 0 0;font-size:.97rem}
+.what b{font:600 .72rem var(--font-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--turn);margin-right:8px}
+.cmp{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:20px}
+@media (max-width:860px){.cmp{grid-template-columns:minmax(0,1fr)}}
+.cmp>div{min-width:0;display:flex;flex-direction:column;gap:10px}
+.cmp ul{margin:0;padding-left:1.1em;display:flex;flex-direction:column;gap:5px;font-size:.9rem}
+.cmp .bad h3{color:var(--rev)} .cmp .good h3{color:var(--fwd)}
+.cmp .codebox{padding:10px 0}
+.cmp .codebox .ln{font-size:.8rem}
+.links{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px}
+.links a{display:flex;flex-direction:column;gap:3px;padding:12px 14px;border:1px solid var(--line);background:var(--surface);border-radius:8px;color:var(--fg);text-decoration:none;min-width:0}
+.links a:hover{border-color:var(--turn)}
+.links a:focus-visible{outline:2px solid var(--turn);outline-offset:2px}
+.links b{font-weight:600;font-size:.92rem}
+.links span{font-size:.8rem;color:var(--muted)}
+.links em{font:500 .7rem var(--font-mono);letter-spacing:.07em;text-transform:uppercase;color:var(--turn);font-style:normal}
+</style>
+
+<main class="wrap">
+  <header>
+    <p class="eyebrow">Finite state machines · obstacle avoidance</p>
+    <h1>Obstacle Avoidance FSM Lab</h1>
+    <p class="lead">A rover reads an ultrasonic sensor and runs a three-state machine: FORWARD, REVERSE, TURN. Move the obstacles, change the threshold and timings, and watch the state, the diagram and the code change together.</p>
+    <p class="what"><b>What is this?</b>A robot drives FORWARD until its distance sensor sees something closer than the threshold, then it backs up (REVERSE), turns to a new direction (TURN) and drives FORWARD again; a finite state machine is the code that tracks which of those three states it is in.</p>
+  </header>
+
+  <section aria-label="Simulator">
+    <div class="lab">
+      <div class="stage">
+        <canvas id="cv" width="640" height="400" role="img" aria-label="Top-down arena with a rover, a sensor ray and round obstacles"></canvas>
+        <div class="controls">
+          <div class="btnrow">
+            <button class="btn primary" id="play" type="button">Pause</button>
+            <button class="btn" id="reset" type="button">Reset rover</button>
+            <button class="btn" id="add" type="button">Add obstacle</button>
+            <button class="btn" id="undo" type="button">Remove last</button>
+            <button class="btn" id="clear" type="button">Clear all</button>
+          </div>
+          <div class="sliders">
+            <div class="ctl"><label for="T">Threshold T</label><output id="Tv" for="T">30 cm</output><input type="range" id="T" min="5" max="90" step="1" value="30"></div>
+            <div class="ctl"><label for="rev">Reverse time</label><output id="revv" for="rev">600 ms</output><input type="range" id="rev" min="200" max="1500" step="50" value="600"></div>
+            <div class="ctl"><label for="turn">Turn time</label><output id="turnv" for="turn">700 ms</output><input type="range" id="turn" min="200" max="1500" step="50" value="700"></div>
+          </div>
+          <div class="toggles">
+            <label><input type="checkbox" id="noise"> Sensor noise</label>
+            <label><input type="checkbox" id="filter"> Need 3 readings in a row</label>
+            <label>Speed
+              <select id="spd"><option value="1">1×</option><option value="2">2×</option><option value="4">4×</option></select>
+            </label>
+          </div>
+          <p class="hint">Click empty floor to drop an obstacle and drag any obstacle to move it. Switch on sensor noise: a single bad reading sends the rover into REVERSE for no reason. Then switch on the 3-reading filter to fix it.</p>
+        </div>
+      </div>
+
+      <aside class="side" id="side" aria-label="Live machine state">
+        <div class="sec">
+          <h3>Current state</h3>
+          <div class="chip" id="chip"><i></i><span id="stname">FORWARD</span></div>
+          <div class="bar"><b id="bar"></b></div>
+          <div class="sub" id="sub"></div>
+        </div>
+        <div class="sec">
+          <h3>Ultrasonic sensor</h3>
+          <div class="readout" id="readout"><span class="num" id="dist">100</span><span class="unit">cm</span><span class="thr" id="thr">T = 30 cm</span></div>
+          <div class="tctl"><label for="Tn">Change threshold T</label><button class="btn" id="Tm" type="button" aria-label="Decrease T by 5">&minus;</button><input type="number" id="Tn" min="5" max="90" step="1" value="30"><button class="btn" id="Tp" type="button" aria-label="Increase T by 5">+</button></div>
+        </div>
+        <div class="sec">
+          <h3>State diagram</h3>
+          <svg class="diag" viewBox="0 0 320 180" role="img" aria-label="FORWARD goes to REVERSE when distance is below T, REVERSE goes to TURN when time is up, TURN goes back to FORWARD when time is up">
+            <defs>
+              <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" style="fill:var(--muted)"/></marker>
+              <marker id="ahf" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0L10 5L0 10z" style="fill:var(--fg)"/></marker>
+            </defs>
+            <g class="edge" id="e-fr"><path d="M112 36 L208 36"/><text x="160" y="28" text-anchor="middle">dist &lt; T</text></g>
+            <g class="edge" id="e-rt"><path d="M268 58 Q268 140 212 140"/><text x="254" y="104" text-anchor="end">time up</text></g>
+            <g class="edge" id="e-tf"><path d="M108 140 Q52 140 52 60"/><text x="60" y="104" text-anchor="start">time up</text></g>
+            <path d="M52 3 L52 14" style="stroke:var(--muted);stroke-width:1.5;fill:none;marker-end:url(#ah)"/>
+            <g class="node n-FORWARD" id="n-FORWARD"><rect x="8" y="16" width="104" height="42" rx="8"/><text class="nm" x="60" y="34" text-anchor="middle">FORWARD</text><text class="ac" x="60" y="48" text-anchor="middle">drive ahead</text></g>
+            <g class="node n-REVERSE" id="n-REVERSE"><rect x="208" y="16" width="104" height="42" rx="8"/><text class="nm" x="260" y="34" text-anchor="middle">REVERSE</text><text class="ac" x="260" y="48" text-anchor="middle">back up</text></g>
+            <g class="node n-TURN" id="n-TURN"><rect x="108" y="120" width="104" height="42" rx="8"/><text class="nm" x="160" y="138" text-anchor="middle">TURN</text><text class="ac" x="160" y="152" text-anchor="middle">rotate</text></g>
+          </svg>
+        </div>
+        <div class="sec">
+          <h3>Transition log</h3>
+          <ol class="log" id="log"></ol>
+        </div>
+        <div class="sec">
+          <dl class="stats">
+            <div><dt>Time</dt><dd id="s-time">0.0 s</dd></div>
+            <div><dt>Changes</dt><dd id="s-tr">0</dd></div>
+            <div><dt>Bumps</dt><dd id="s-bump">0</dd></div>
+          </dl>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <section aria-label="Code">
+    <h2>The same machine as Arduino code</h2>
+    <div class="codebox" id="codebox" role="group" aria-label="Arduino C++ code, active state highlighted"></div>
+  </section>
+
+  <section aria-label="Why FSM">
+    <h2>Why use an FSM?</h2>
+    <div class="cmp">
+      <div class="bad">
+        <h3>Nested if-else with flags</h3>
+        <div class="codebox" id="cb-if" role="group" aria-label="Same logic written with nested if-else"></div>
+        <ul>
+          <li>Two flags and two timers. The state is hidden in flag combinations.</li>
+          <li>Both flags can end up true by mistake.</li>
+          <li>Adding a SCAN or STOP behaviour means editing every branch.</li>
+        </ul>
+      </div>
+      <div class="good">
+        <h3>FSM with one state variable</h3>
+        <div class="codebox" id="cb-fsm" role="group" aria-label="Same logic written as a state machine"></div>
+        <ul>
+          <li>One variable and one timer. Exactly one state is active.</li>
+          <li>Each case holds only its own action and its own exit.</li>
+          <li>Adding a behaviour means adding one more case.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+(function(){
+'use strict';
+var W=320,H=200,RB=8,MAXR=100,SENSE=0.05,MAXOBS=12;
+var MONO='"IBM Plex Mono", ui-monospace, monospace';
+function $(id){return document.getElementById(id);}
+var cv=$('cv'),ctx=cv.getContext('2d');
+var obstacles=[{x:120,y:62,r:14},{x:175,y:140,r:16},{x:238,y:72,r:12},{x:268,y:150,r:14}];
+var robot={x:40,y:100,a:0};
+var st='FORWARD',simT=0,stateStart=0,left=true,turnDur=0.7;
+var trail=[],log=[],transitions=0,bumps=0,blockedPrev=false;
+var reading=MAXR,close=0,nextSample=0,dirty=true,lastSt='';
+var running=!(window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches);
+var speedMul=1,drag=null,dragOff={x:0,y:0};
+var P={T:30,rev:600,turn:700,noise:false,filter:false};
+var KEY={FORWARD:'fwd',REVERSE:'rev',TURN:'turn'};
+var EDGE={'FORWARD>REVERSE':'e-fr','REVERSE>TURN':'e-rt','TURN>FORWARD':'e-tf'};
+
+/* ---------- code panel ---------- */
+var CODE=[
+['','enum State { FORWARD, REVERSE, TURN };'],
+['','State state = FORWARD;'],
+['','unsigned long stateStart = 0;'],
+['','bool left = true;'],
+['',''],
+['','void enter(State s) { state = s; stateStart = millis(); }'],
+['',''],
+['','void loop() {'],
+['','  long d = readDistanceCm();'],
+['','  switch (state) {'],
+['FORWARD','    case FORWARD:'],
+['FORWARD','      moveForward();'],
+['FORWARD','      if (d < {T}) enter(REVERSE);'],
+['FORWARD','      break;'],
+['REVERSE','    case REVERSE:'],
+['REVERSE','      moveBackward();'],
+['REVERSE','      if (millis() - stateStart > {R}) {'],
+['REVERSE','        left = !left;  enter(TURN);'],
+['REVERSE','      }'],
+['REVERSE','      break;'],
+['TURN','    case TURN:'],
+['TURN','      if (left) turnLeft(); else turnRight();'],
+['TURN','      if (millis() - stateStart > {N}) enter(FORWARD);'],
+['TURN','      break;'],
+['','  }'],
+['','}']
+];
+var codebox=$('codebox'),lineEls=[];
+CODE.forEach(function(l){var d=document.createElement('div');d.className='ln';d.dataset.s=l[0];codebox.appendChild(d);lineEls.push(d);});
+function updateCode(){
+  CODE.forEach(function(l,i){
+    lineEls[i].textContent=fillTpl(l[1]);
+  });
+  plainBlocks.forEach(function(b){b[1].forEach(function(t,i){b[2][i].textContent=fillTpl(t);});});
+}
+var IFELSE=[
+'void loop() {',
+'  long d = readDistanceCm();',
+'  if (!reversing && !turning) {',
+'    if (d < {T}) {',
+'      reversing = true;',
+'      reverseStart = millis();',
+'    } else {',
+'      moveForward();',
+'    }',
+'  } else if (reversing) {',
+'    moveBackward();',
+'    if (millis() - reverseStart > {R}) {',
+'      reversing = false;',
+'      turning = true;',
+'      turnStart = millis();',
+'      left = !left;',
+'    }',
+'  } else if (turning) {',
+'    if (left) turnLeft(); else turnRight();',
+'    if (millis() - turnStart > {N}) {',
+'      turning = false;',
+'    }',
+'  }',
+'}'
+];
+var FSMLOOP=[
+'void loop() {',
+'  long d = readDistanceCm();',
+'  switch (state) {',
+'    case FORWARD:',
+'      moveForward();',
+'      if (d < {T}) enter(REVERSE);',
+'      break;',
+'    case REVERSE:',
+'      moveBackward();',
+'      if (millis() - stateStart > {R}) {',
+'        left = !left;  enter(TURN);',
+'      }',
+'      break;',
+'    case TURN:',
+'      if (left) turnLeft(); else turnRight();',
+'      if (millis() - stateStart > {N}) enter(FORWARD);',
+'      break;',
+'  }',
+'}'
+];
+var plainBlocks=[[$('cb-if'),IFELSE,[]],[$('cb-fsm'),FSMLOOP,[]]];
+plainBlocks.forEach(function(b){b[1].forEach(function(){var d=document.createElement('div');d.className='ln';b[0].appendChild(d);b[2].push(d);});});
+function fillTpl(t){return t.replace('{T}',P.T).replace('{R}',P.rev).replace('{N}',P.turn);}
+function highlight(){
+  lineEls.forEach(function(el){el.classList.toggle('on',el.dataset.s===st);});
+}
+
+/* ---------- sensing + movement ---------- */
+function trueDist(){
+  var dx=Math.cos(robot.a),dy=Math.sin(robot.a),ox=robot.x+dx*RB,oy=robot.y+dy*RB;
+  for(var s=0;s<=MAXR;s++){
+    var px=ox+dx*s,py=oy+dy*s;
+    if(px<0||px>W||py<0||py>H)return s;
+    for(var i=0;i<obstacles.length;i++){var o=obstacles[i];if(Math.hypot(px-o.x,py-o.y)<o.r)return s;}
+  }
+  return MAXR;
+}
+function collides(x,y){
+  if(x<RB||x>W-RB||y<RB||y>H-RB)return true;
+  for(var i=0;i<obstacles.length;i++){var o=obstacles[i];if(Math.hypot(x-o.x,y-o.y)<o.r+RB)return true;}
+  return false;
+}
+function gauss(){return (Math.random()+Math.random()+Math.random()-1.5)*2;}
+function sample(){
+  var d=trueDist();
+  if(P.noise){d+=gauss()*3;if(Math.random()<0.03)d=4;}
+  reading=Math.max(2,Math.min(MAXR,Math.round(d)));
+  if(reading<P.T)close++;else close=0;
+}
+function tryMove(dist){
+  var nx=robot.x+Math.cos(robot.a)*dist,ny=robot.y+Math.sin(robot.a)*dist;
+  if(collides(nx,ny)&&!collides(robot.x,robot.y)){
+    if(!blockedPrev&&st==='FORWARD')bumps++;
+    blockedPrev=true;return;
+  }
+  blockedPrev=false;robot.x=nx;robot.y=ny;
+  var t=trail[trail.length-1];
+  if(!t||Math.hypot(t[0]-nx,t[1]-ny)>2){trail.push([nx,ny]);if(trail.length>420)trail.shift();}
+}
+function flashEdge(from,to){
+  var id=EDGE[from+'>'+to];if(!id)return;
+  var el=$(id);el.classList.add('flash');
+  setTimeout(function(){el.classList.remove('flash');},700);
+}
+function enter(next){
+  log.unshift({t:simT,from:st,to:next,d:reading});
+  if(log.length>6)log.length=6;
+  transitions++;flashEdge(st,next);
+  st=next;stateStart=simT;dirty=true;
+}
+function step(dt){
+  simT+=dt;
+  if(simT>=nextSample){sample();nextSample=simT+SENSE;}
+  var need=P.filter?3:1;
+  if(st==='FORWARD'){
+    tryMove(40*dt);
+    if(close>=need)enter('REVERSE');
+  }else if(st==='REVERSE'){
+    tryMove(-30*dt);
+    if(simT-stateStart>=P.rev/1000){
+      left=!left;turnDur=(P.turn/1000)*(0.75+Math.random()*0.5);
+      enter('TURN');
+    }
+  }else{
+    robot.a+=(left?-1:1)*Math.PI*130/180*dt;
+    if(simT-stateStart>=turnDur){close=0;nextSample=simT;enter('FORWARD');}
+  }
+}
+
+/* ---------- drawing ---------- */
+var C={},frameN=0;
+function refreshColors(){
+  var cs=getComputedStyle(document.documentElement);
+  ['fwd','rev','turn','ray','obs','arena','line','muted','fg','surface'].forEach(function(k){C[k]=cs.getPropertyValue('--'+k).trim();});
+}
+function resize(){
+  var dpr=Math.min(window.devicePixelRatio||1,2);
+  var w=Math.max(280,Math.round(cv.clientWidth*dpr));
+  if(cv.width!==w){cv.width=w;cv.height=Math.round(w*H/W);}
+}
+function draw(){
+  var dpr=Math.min(window.devicePixelRatio||1,2),k=cv.width/W,px=dpr/k;
+  ctx.setTransform(k,0,0,k,0,0);
+  ctx.fillStyle=C.arena;ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle=C.line;ctx.lineWidth=px;ctx.globalAlpha=.7;ctx.beginPath();
+  for(var gx=20;gx<W;gx+=20){ctx.moveTo(gx,0);ctx.lineTo(gx,H);}
+  for(var gy=20;gy<H;gy+=20){ctx.moveTo(0,gy);ctx.lineTo(W,gy);}
+  ctx.stroke();ctx.globalAlpha=1;
+  ctx.fillStyle=C.muted;ctx.font=(10*px)+'px '+MONO;ctx.fillText('grid: 20 cm',5,H-6);
+  /* trail */
+  if(trail.length>1){
+    ctx.strokeStyle=C.muted;ctx.globalAlpha=.55;ctx.lineWidth=1.4*px;ctx.lineJoin='round';ctx.beginPath();
+    ctx.moveTo(trail[0][0],trail[0][1]);
+    for(var i=1;i<trail.length;i++)ctx.lineTo(trail[i][0],trail[i][1]);
+    ctx.stroke();ctx.globalAlpha=1;
+  }
+  var dx=Math.cos(robot.a),dy=Math.sin(robot.a),ox=robot.x+dx*RB,oy=robot.y+dy*RB;
+  /* danger cone (threshold) */
+  ctx.beginPath();ctx.moveTo(ox,oy);ctx.arc(ox,oy,P.T,robot.a-0.24,robot.a+0.24);ctx.closePath();
+  ctx.globalAlpha=.13;ctx.fillStyle=C.ray;ctx.fill();ctx.globalAlpha=.7;
+  ctx.strokeStyle=C.ray;ctx.lineWidth=1.2*px;ctx.setLineDash([4*px,3*px]);ctx.stroke();
+  ctx.setLineDash([]);ctx.globalAlpha=1;
+  /* obstacles */
+  obstacles.forEach(function(o){
+    ctx.beginPath();ctx.arc(o.x,o.y,o.r,0,Math.PI*2);ctx.fillStyle=C.obs;ctx.fill();
+    ctx.strokeStyle=C.muted;ctx.lineWidth=1.2*px;ctx.stroke();
+  });
+  /* ray */
+  var td=trueDist(),hot=reading<P.T,rc=hot?C.ray:C.muted;
+  ctx.strokeStyle=rc;ctx.lineWidth=1.6*px;ctx.beginPath();ctx.moveTo(ox,oy);ctx.lineTo(ox+dx*td,oy+dy*td);ctx.stroke();
+  ctx.fillStyle=rc;ctx.beginPath();ctx.arc(ox+dx*td,oy+dy*td,2.4,0,Math.PI*2);ctx.fill();
+  /* robot */
+  ctx.save();ctx.translate(robot.x,robot.y);ctx.rotate(robot.a);
+  ctx.fillStyle=C.fg;ctx.globalAlpha=.85;ctx.fillRect(-7,-9.5,9,3);ctx.fillRect(-7,6.5,9,3);ctx.globalAlpha=1;
+  ctx.fillStyle=C[KEY[st]];ctx.beginPath();
+  if(ctx.roundRect)ctx.roundRect(-9,-7,18,14,3);else ctx.rect(-9,-7,18,14);
+  ctx.fill();ctx.strokeStyle=C.fg;ctx.lineWidth=1.2*px;ctx.stroke();
+  ctx.fillStyle=C.arena;ctx.beginPath();ctx.arc(9,-3.5,1.8,0,Math.PI*2);ctx.arc(9,3.5,1.8,0,Math.PI*2);ctx.fill();
+  ctx.restore();
+  /* walls */
+  ctx.strokeStyle=C.muted;ctx.lineWidth=3*px;ctx.strokeRect(0,0,W,H);
+}
+
+/* ---------- panel ---------- */
+var side=$('side'),stname=$('stname'),bar=$('bar'),sub=$('sub'),distEl=$('dist'),readout=$('readout');
+function ui(){
+  if(st!==lastSt){
+    lastSt=st;stname.textContent=st;
+    var v='var(--'+KEY[st]+')';side.style.setProperty('--st',v);codebox.style.setProperty('--st',v);
+    ['FORWARD','REVERSE','TURN'].forEach(function(n){$('n-'+n).classList.toggle('on',n===st);});
+    highlight();
+  }
+  var el=simT-stateStart,pct=0,msg='';
+  if(st==='FORWARD'){msg='Driving ahead. Goes to REVERSE when '+(P.filter?'3 readings in a row are':'a reading is')+' below '+P.T+' cm.';}
+  else if(st==='REVERSE'){pct=Math.min(1,el/(P.rev/1000));msg='Backing up for '+P.rev+' ms, then TURN.';}
+  else{pct=Math.min(1,el/turnDur);msg='Turning '+(left?'left':'right')+' for '+Math.round(turnDur*1000)+' ms, then FORWARD.';}
+  bar.style.width=(pct*100).toFixed(0)+'%';
+  if(sub.textContent!==msg)sub.textContent=msg;
+  distEl.textContent=reading;readout.classList.toggle('near',reading<P.T);
+  $('s-time').textContent=simT.toFixed(1)+' s';$('s-tr').textContent=transitions;$('s-bump').textContent=bumps;
+  if(dirty){
+    dirty=false;var ol=$('log');ol.textContent='';
+    log.forEach(function(e){
+      var li=document.createElement('li');
+      li.textContent=e.t.toFixed(1).padStart(5,' ')+'s  '+e.from+' > '+e.to+'  d='+e.d;
+      ol.appendChild(li);
+    });
+  }
+}
+
+/* ---------- controls ---------- */
+function resetRobot(){
+  robot.x=40;robot.y=100;robot.a=0;st='FORWARD';simT=0;stateStart=0;left=true;turnDur=P.turn/1000;
+  trail=[];log=[];transitions=0;bumps=0;blockedPrev=false;reading=MAXR;close=0;nextSample=0;dirty=true;
+}
+function setPlay(){$('play').textContent=running?'Pause':'Play';}
+$('play').addEventListener('click',function(){running=!running;setPlay();});
+$('reset').addEventListener('click',resetRobot);
+$('undo').addEventListener('click',function(){obstacles.pop();});
+$('clear').addEventListener('click',function(){obstacles=[];});
+$('add').addEventListener('click',function(){
+  if(obstacles.length>=MAXOBS)return;
+  for(var n=0;n<40;n++){
+    var r=9+Math.random()*7,x=30+Math.random()*(W-60),y=30+Math.random()*(H-60),ok=Math.hypot(x-robot.x,y-robot.y)>RB+r+28;
+    for(var i=0;ok&&i<obstacles.length;i++){var o=obstacles[i];if(Math.hypot(x-o.x,y-o.y)<o.r+r+6)ok=false;}
+    if(ok){obstacles.push({x:x,y:y,r:r});return;}
+  }
+});
+function bindRange(id,key,fmt){
+  var el=$(id),out=$(id+'v');
+  el.addEventListener('input',function(){P[key]=+el.value;out.textContent=el.value+fmt;if(key==='T')$('thr').textContent='T = '+el.value+' cm';updateCode();});
+}
+bindRange('rev','rev',' ms');bindRange('turn','turn',' ms');
+function setT(v){
+  v=Math.max(5,Math.min(90,Math.round(+v)));if(isNaN(v))return;
+  P.T=v;close=0;$('T').value=v;$('Tn').value=v;$('Tv').textContent=v+' cm';$('thr').textContent='T = '+v+' cm';updateCode();
+}
+$('T').addEventListener('input',function(e){setT(e.target.value);});
+$('Tn').addEventListener('input',function(e){if(e.target.value!=='')setT(e.target.value);});
+$('Tn').addEventListener('change',function(e){setT(e.target.value||P.T);});
+$('Tm').addEventListener('click',function(){setT(P.T-5);});
+$('Tp').addEventListener('click',function(){setT(P.T+5);});
+$('noise').addEventListener('change',function(e){P.noise=e.target.checked;});
+$('filter').addEventListener('change',function(e){P.filter=e.target.checked;close=0;});
+$('spd').addEventListener('change',function(e){speedMul=+e.target.value;});
+
+/* ---------- pointer: add / drag obstacles ---------- */
+function pos(e){var r=cv.getBoundingClientRect();return {x:(e.clientX-r.left)/r.width*W,y:(e.clientY-r.top)/r.height*H};}
+function pick(p){for(var i=obstacles.length-1;i>=0;i--){var o=obstacles[i];if(Math.hypot(p.x-o.x,p.y-o.y)<=o.r+3)return o;}return null;}
+cv.addEventListener('pointerdown',function(e){
+  var p=pos(e),o=pick(p);
+  if(o){drag=o;dragOff={x:p.x-o.x,y:p.y-o.y};try{cv.setPointerCapture(e.pointerId);}catch(x){}cv.style.cursor='grabbing';}
+  else if(obstacles.length<MAXOBS&&Math.hypot(p.x-robot.x,p.y-robot.y)>RB+22&&p.x>12&&p.x<W-12&&p.y>12&&p.y<H-12){
+    obstacles.push({x:p.x,y:p.y,r:11});
+  }
+});
+cv.addEventListener('pointermove',function(e){
+  var p=pos(e);
+  if(drag){drag.x=Math.max(drag.r,Math.min(W-drag.r,p.x-dragOff.x));drag.y=Math.max(drag.r,Math.min(H-drag.r,p.y-dragOff.y));}
+  else cv.style.cursor=pick(p)?'grab':'crosshair';
+});
+function endDrag(){drag=null;cv.style.cursor='crosshair';}
+cv.addEventListener('pointerup',endDrag);cv.addEventListener('pointercancel',endDrag);
+
+/* ---------- loop ---------- */
+var last=performance.now();
+function frame(now){
+  var dt=Math.min(0.05,(now-last)/1000);last=now;
+  if(running){var s=dt*speedMul;while(s>1e-6){var h=Math.min(s,1/60);step(h);s-=h;}}
+  if((frameN++%90)===0)refreshColors();
+  draw();ui();
+  requestAnimationFrame(frame);
+}
+refreshColors();updateCode();resize();setPlay();
+if(window.ResizeObserver)new ResizeObserver(resize).observe(cv);else window.addEventListener('resize',resize);
+if(window.matchMedia)matchMedia('(prefers-color-scheme: dark)').addEventListener&&matchMedia('(prefers-color-scheme: dark)').addEventListener('change',refreshColors);
+requestAnimationFrame(frame);
+})();
+</script>
+
+</body></html>
